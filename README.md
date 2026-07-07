@@ -1,8 +1,8 @@
 # beholder-mcp
 
-An MCP server for the [Beholder](https://api.beholder-gov.com) government contracting API, built with [FastMCP](https://github.com/jlowin/fastmcp) and Python.
+An MCP server for the [Beholder](https://beholder-gov.com/about) government contracting API, built with [FastMCP](https://github.com/jlowin/fastmcp) and Python.
 
-Beholder provides richer data and higher rate limits than SAM.gov — including risk indicators, contract vehicles, subaward tracking, and more.
+Beholder aggregates and enriches data from [SAM.gov](https://sam.gov) and [USASpending.gov](https://usaspending.gov), providing higher rate limits and richer analysis than either public API — including risk indicators, contract vehicles, competition metrics, and subaward tracking.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Beholder provides richer data and higher rate limits than SAM.gov — including 
 
 ```bash
 git clone https://github.com/rsivilli/beholder-mcp
-cd sam-mcp
+cd beholder-mcp
 ```
 
 Create a `.env` file and set your API key:
