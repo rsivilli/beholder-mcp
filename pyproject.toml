@@ -7,7 +7,7 @@ license = { text = "MIT" }
 authors = [
     { name = "Robert Sivilli", email = "robert.sivilli@gmail.com" }
 ]
-keywords = ["mcp", "beholder", "government", "contracts", "procurement"]
+keywords = ["mcp", "beholder", "government", "contracts", "procurement", "sam.gov", "usaspending", "fpds", "federal", "contracting", "model-context-protocol", "ai-tools"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
