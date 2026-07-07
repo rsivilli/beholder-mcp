@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/sam-mcp
+      url: https://pypi.org/p/beholder-mcp
     permissions:
       id-token: write
     steps:

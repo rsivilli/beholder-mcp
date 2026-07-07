@@ -1,24 +1,25 @@
-# sam-mcp
+# beholder-mcp
 
-An MCP server for accessing [SAM.gov](https://sam.gov) APIs, built with [FastMCP](https://github.com/jlowin/fastmcp) and Python.
+An MCP server for the [Beholder](https://api.beholder-gov.com) government contracting API, built with [FastMCP](https://github.com/jlowin/fastmcp) and Python.
+
+Beholder provides richer data and higher rate limits than SAM.gov — including risk indicators, contract vehicles, subaward tracking, and more.
 
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- A SAM.gov API key — get one at [sam.gov/workspace/profile/account-details](https://sam.gov/workspace/profile/account-details)
+- A Beholder API key — get one at [api.beholder-gov.com/docs](https://api.beholder-gov.com/docs)
 
 ## Setup
 
 ```bash
-git clone https://github.com/rsivilli/sam-mcp
+git clone https://github.com/rsivilli/beholder-mcp
 cd sam-mcp
-cp .env.example .env
 ```
 
-Edit `.env` and set your API key:
+Create a `.env` file and set your API key:
 
 ```env
-SAM_API_KEY=your_api_key_here
+BEHOLDER_API_KEY=your_api_key_here
 ```
 
 ## Running the server
@@ -26,13 +27,13 @@ SAM_API_KEY=your_api_key_here
 **stdio** (for MCP clients that spawn the process, e.g. Claude Desktop):
 
 ```bash
-uv run sam-mcp
+uv run beholder-mcp
 ```
 
 **HTTP** (for connecting remotely):
 
 ```bash
-uv run sam-mcp-http
+uv run beholder-mcp-http
 ```
 
 ## Claude Desktop configuration
@@ -42,11 +43,11 @@ Add the following to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "sam-gov": {
+    "beholder": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/sam-mcp", "sam-mcp"],
+      "args": ["run", "--directory", "/path/to/beholder-mcp", "beholder-mcp"],
       "env": {
-        "SAM_API_KEY": "your_api_key_here"
+        "BEHOLDER_API_KEY": "your_api_key_here"
       }
     }
   }
@@ -55,49 +56,29 @@ Add the following to your `claude_desktop_config.json`:
 
 ## Available tools
 
-### Entity & registration
+### Contractors
 
 | Tool | Description |
 |---|---|
-| `search_entities` | Search registered entities (vendors/organizations) by name, UEI, CAGE code, state, country, or registration status |
-| `get_entity` | Get full details for a specific entity by UEI |
-| `resolve_company` | Resolve a company name to its SAM.gov entity record and UEI — returns the single best match |
+| `search_contractors` | Search contractors by name, UEI, state, or agency — returns paginated list with obligation totals and review priority scores |
+| `get_contractor` | Get a contractor record by UEI or name — returns full profile with top agencies, PSC codes, vehicle summaries, and risk indicators |
+| `resolve_contractor` | Resolve a company name or UEI to its Beholder UUID and key fields — returns the single best match |
+| `get_contractor_profile` | Full contractor profile in one call: registration details, recent contracts, risk indicators, and contract vehicles |
+| `find_competitors` | Find contractors competing in the same PSC code categories as a given company |
 
-### Opportunities & exclusions
-
-| Tool | Description |
-|---|---|
-| `search_opportunities` | Search contract opportunities/solicitations by keyword, NAICS code, set-aside type, date range, and more. `postedFrom` and `postedTo` are required. |
-| `search_exclusions` | Search for debarred or suspended parties by name, UEI, or CAGE code |
-
-### Contract awards
+### Opportunities
 
 | Tool | Description |
 |---|---|
-| `search_contract_awards` | Search FPDS contract award records by recipient UEI, agency, NAICS code, date range, or dollar amount |
-| `get_similar_awards` | Given a contract PIID, find other awarded contracts with the same NAICS code, awarding agency, and set-aside type |
+| `search_opportunities` | Search contract opportunities and award notices by keyword, NAICS code, set-aside, agency, active status, and date filters |
 
-### Company intelligence
+### Contracts & subawards
 
 | Tool | Description |
 |---|---|
-| `get_company_profile` | Full profile of a company: entity registration and contract awards in a single call |
-| `find_competitors` | Find companies registered under the same NAICS codes as a given entity |
-| `search_subawards` | Search FSRS subcontract reports by PIID, agency, award type, or date range |
-| `get_subawards_by_prime` | *(disabled — subaward PIID filter unverified against live API; re-enable once confirmed with a system account key)* |
-
-## API rate limits
-
-Rate limits are per API key per day and reset at midnight UTC.
-
-| User type | Daily limit |
-|---|---|
-| Non-federal (no SAM.gov role) | 10 requests/day |
-| Non-federal (with SAM.gov role) | 1,000 requests/day |
-| Federal personal key | 1,000 requests/day |
-| Federal system account | 10,000 requests/day |
-
-For production use, a **system account** key is recommended. Apply through your SAM.gov account settings.
+| `search_contracts` | Search awarded contracts by PIID prefix, recipient, PSC code, fiscal year, obligation range, date range, status, and award type |
+| `get_related_contracts` | Given a contract PIID, find related contracts — parent, siblings, same vehicle, or same awardee |
+| `search_subawards` | Get subaward reports filed under a specific prime contract PIID |
 
 ## Development
 

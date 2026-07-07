@@ -1,13 +1,13 @@
 [project]
-name = "sam-mcp"
-version = "0.3.0"
-description = "MCP server for accessing SAM.gov APIs"
+name = "beholder-mcp"
+version = "1.0.0"
+description = "MCP server for the Beholder government contracting API"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
     { name = "Robert Sivilli", email = "robert.sivilli@gmail.com" }
 ]
-keywords = ["mcp", "sam.gov", "government", "contracts", "procurement"]
+keywords = ["mcp", "beholder", "government", "contracts", "procurement"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -21,9 +21,13 @@ dependencies = [
     "pydantic-settings>=2.13.1",
 ]
 
+[project.urls]
+Homepage = "https://api.beholder-gov.com"
+Repository = "https://github.com/rsivilli/beholder-mcp"
+
 [project.scripts]
-sam-mcp = "sam_mcp.server:main_stdio"
-sam-mcp-http = "sam_mcp.server:main_http"
+beholder-mcp = "beholder_mcp.server:main_stdio"
+beholder-mcp-http = "beholder_mcp.server:main_http"
 
 [build-system]
 requires = ["uv_build>=0.10.9,<0.11.0"]
