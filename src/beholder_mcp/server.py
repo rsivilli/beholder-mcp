@@ -17,6 +17,28 @@ from beholder_mcp.models import (
     ResolvedContractor,
     SubawardListResponse,
 )
+from beholder_mcp.portfolio_helpers import (
+    _build_agency_office,
+    _build_award_from_detail,
+    _build_pop,
+    _compute_financial_rollups,
+    _compute_portfolio_metrics,
+    _format_money_display,
+)
+from beholder_mcp.portfolio_models import (
+    AgencyOffice,
+    Award,
+    ContractDetail,
+    ContractPortfolioDeckData,
+    EntityProfile,
+    EntityRef,
+    FinancialRollups,
+    MoneyValue,
+    PeriodOfPerformance,
+    SourceAttribution,
+    SourceContext,
+    SubcontractRelationship,
+)
 
 mcp = FastMCP("Beholder")
 
@@ -475,6 +497,261 @@ async def search_subawards(
     )
     response.raise_for_status()
     return SubawardListResponse.model_validate(response.json())
+
+
+# ---------------------------------------------------------------------------
+# Portfolio / slide deck tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def get_contract_detail(
+    piid: Annotated[str, Field(description="Contract PIID to look up")],
+) -> ContractDetail:
+    """Get the full detail record for a contract by PIID.
+    Returns all available fields: parent contract, funding agency, period of performance,
+    financial values (obligated, potential, base+options), competition details, and vehicle info."""
+    contract_id = await _resolve_contract_id(piid)
+    if not contract_id:
+        raise ValueError(f"No contract found for PIID '{piid}'")
+    response = await _get_client().get(
+        f"/api/v1/contracts/{contract_id}", headers=_headers()
+    )
+    response.raise_for_status()
+    return ContractDetail.model_validate(response.json())
+
+
+@mcp.tool()
+async def get_entity_awards(
+    uei: Annotated[str, Field(description="UEI or company name")],
+    include_inactive: Annotated[
+        bool,
+        Field(description="Include completed and expired contracts (default true)"),
+    ] = True,
+    page_size: Annotated[
+        int,
+        Field(
+            description="Contracts per page when fetching the list (max 200)",
+            ge=1,
+            le=200,
+        ),
+    ] = 50,
+) -> list[Award]:
+    """Get all contracts for a company as normalized Award objects with structured financials,
+    period of performance, competition details, and agency information.
+    Makes one detail API call per contract — expect several seconds for large portfolios."""
+    contractor_id = await _resolve_contractor_id(uei)
+    if not contractor_id:
+        raise ValueError(f"No contractor found for '{uei}'")
+
+    all_items: list[dict] = []
+    page = 1
+    while True:
+        resp = await _get_client().get(
+            f"/api/v1/contractors/{contractor_id}/contracts",
+            params={"page": page, "page_size": page_size},
+            headers=_headers(),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("items", [])
+        all_items.extend(items)
+        if len(all_items) >= data.get("total", 0) or not items:
+            break
+        page += 1
+
+    awards: list[Award] = []
+    for item in all_items:
+        contract_id_val = item.get("contract_id")
+        if not contract_id_val:
+            continue
+        detail_resp = await _get_client().get(
+            f"/api/v1/contracts/{contract_id_val}", headers=_headers()
+        )
+        if detail_resp.status_code != 200:
+            continue
+        detail = detail_resp.json()
+        if not include_inactive and detail.get("status") not in ("active",):
+            continue
+        awards.append(_build_award_from_detail(detail))
+
+    return awards
+
+
+@mcp.tool()
+async def get_subcontract_history(
+    uei: Annotated[str, Field(description="UEI or company name")],
+) -> list[SubcontractRelationship]:
+    """Get subcontract relationships where the given company appears as the subcontractor.
+    Enriches each subaward with prime contract details: period, agency, vehicle, and prime value."""
+    contractor_id = await _resolve_contractor_id(uei)
+    if not contractor_id:
+        raise ValueError(f"No contractor found for '{uei}'")
+
+    resp = await _get_client().get(
+        f"/api/v1/contractors/{contractor_id}/subawards-received",
+        params={"page_size": 200},
+        headers=_headers(),
+    )
+    resp.raise_for_status()
+    subawards = resp.json().get("items", [])
+
+    relationships: list[SubcontractRelationship] = []
+    for sub in subawards:
+        prime_contract_id = sub.get("prime_contract_id")
+        prime_detail: Optional[dict] = None
+        if prime_contract_id:
+            prime_resp = await _get_client().get(
+                f"/api/v1/contracts/{prime_contract_id}", headers=_headers()
+            )
+            if prime_resp.status_code == 200:
+                prime_detail = prime_resp.json()
+
+        pop: Optional[PeriodOfPerformance] = None
+        prime_value: Optional[MoneyValue] = None
+        customer_agency: Optional[AgencyOffice] = None
+        parent_vehicle_piid: Optional[str] = None
+
+        if prime_detail:
+            pop = _build_pop(
+                prime_detail.get("start_date"),
+                prime_detail.get("end_date"),
+                prime_detail.get("ordering_period_end_date"),
+            )
+            ptv = prime_detail.get("potential_total_value")
+            if ptv is not None:
+                prime_value = MoneyValue(
+                    amount=ptv,
+                    display_value=_format_money_display(ptv),
+                    value_type="prime_contract_value",
+                )
+            customer_agency = _build_agency_office(
+                prime_detail.get("awarding_agency"),
+                prime_detail.get("awarding_office"),
+            )
+            parent_vehicle_piid = prime_detail.get("vehicle_solicitation_identifier")
+
+        sub_amount = sub.get("subaward_amount")
+        relationships.append(
+            SubcontractRelationship(
+                subcontractor=EntityRef(
+                    name=sub.get("sub_recipient_name") or "Unknown",
+                    uei=sub.get("sub_recipient_uei"),
+                ),
+                prime_contractor=EntityRef(
+                    name=sub.get("prime_recipient_name") or "Unknown",
+                    uei=sub.get("prime_recipient_uei"),
+                ),
+                prime_award_piid=sub.get("prime_award_id_piid") or "",
+                parent_vehicle_piid=parent_vehicle_piid,
+                customer_agency=customer_agency,
+                prime_contract_value=prime_value,
+                subcontract_value=MoneyValue(
+                    amount=sub_amount,
+                    display_value=_format_money_display(sub_amount),
+                    value_type="obligated",
+                )
+                if sub_amount is not None
+                else None,
+                period=pop,
+                description=sub.get("subaward_description"),
+                source=SourceAttribution(
+                    source_name="Beholder / USAspending",
+                    source_record_id=sub.get("id"),
+                    confidence="raw",
+                ),
+            )
+        )
+
+    return relationships
+
+
+@mcp.tool()
+async def get_financial_rollups(
+    uei: Annotated[str, Field(description="UEI or company name")],
+    exclude_ceiling_only: Annotated[
+        bool,
+        Field(
+            description=(
+                "Exclude IDV ceiling-only awards (zero obligated) from obligation totals. "
+                "Default true to avoid inflating headline numbers."
+            )
+        ),
+    ] = True,
+) -> FinancialRollups:
+    """Get obligated value rollups by agency, fiscal year, and award type for a contractor.
+    IDV ceiling-only awards are excluded by default to avoid inflating obligation totals."""
+    awards = await get_entity_awards(uei)
+    return _compute_financial_rollups(awards, exclude_ceiling_only=exclude_ceiling_only)
+
+
+@mcp.tool()
+async def get_contract_portfolio_deck_data(
+    uei: Annotated[str, Field(description="UEI or company name")],
+    include_subcontracts: Annotated[
+        bool,
+        Field(
+            description="Include subcontract history (fetches additional API records)"
+        ),
+    ] = True,
+) -> ContractPortfolioDeckData:
+    """Fetch all structured data needed to generate a federal contract portfolio presentation.
+    Returns entity profile, all normalized awards with financials and period of performance,
+    subcontract history, financial rollups by agency/year/type, and headline portfolio metrics.
+    This is the primary tool for slide deck data generation — gets everything in one call."""
+    contractor_id = await _resolve_contractor_id(uei)
+    if not contractor_id:
+        raise ValueError(f"No contractor found for '{uei}'")
+
+    # Fetch contractor profile in background while awards are retrieved
+    profile_task = asyncio.create_task(
+        _get_client().get(f"/api/v1/contractors/{contractor_id}", headers=_headers())
+    )
+
+    awards = await get_entity_awards(uei)
+
+    profile_resp = await profile_task
+    profile_resp.raise_for_status()
+    profile_data = profile_resp.json()
+
+    # Extract CAGE code from the first award that has one
+    cage_code: Optional[str] = next(
+        (a.recipient.cage_code for a in awards if a.recipient.cage_code), None
+    )
+
+    entity = EntityProfile(
+        legal_name=profile_data["legal_name"],
+        uei=profile_data.get("uei") or uei,
+        cage_code=cage_code,
+        registration_status=profile_data.get("sam_status"),
+        address_city=profile_data.get("address_city"),
+        address_state=profile_data.get("address_state"),
+        source=SourceAttribution(
+            source_name="Beholder / SAM.gov",
+            source_record_id=contractor_id,
+            confidence="raw",
+        ),
+    )
+
+    subcontracts: list[SubcontractRelationship] = []
+    if include_subcontracts:
+        subcontracts = await get_subcontract_history(uei)
+
+    metrics = _compute_portfolio_metrics(awards)
+    rollups = _compute_financial_rollups(awards, exclude_ceiling_only=True)
+
+    return ContractPortfolioDeckData(
+        entity=entity,
+        source_context=SourceContext(
+            source_name="Beholder / USAspending",
+            query_filters={"entity_uei": entity.uei},
+            result_count=len(awards),
+        ),
+        portfolio_metrics=metrics,
+        awards=awards,
+        subcontracts=subcontracts,
+        financial_rollups=rollups,
+    )
 
 
 # ---------------------------------------------------------------------------

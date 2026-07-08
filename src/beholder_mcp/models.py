@@ -547,3 +547,34 @@ class SubawardListResponse(BaseModel):
     total: int = Field(description="Total number of subawards across all pages")
     page: int = Field(description="Current page number (1-based)")
     page_size: int = Field(description="Number of items per page")
+
+
+# ---------------------------------------------------------------------------
+# Portfolio / slide deck data models — re-exported from portfolio_models
+# ---------------------------------------------------------------------------
+
+from beholder_mcp.portfolio_models import (  # noqa: E402, F401
+    AgencyObligationRollup,
+    AgencyOffice,
+    Award,
+    AwardFinancials,
+    AwardRef,
+    AwardTypeNormalized,
+    AwardTypeRollup,
+    CompetitionInfo,
+    ConfidenceType,
+    ContractDetail,
+    ContractPortfolioDeckData,
+    EntityProfile,
+    EntityRef,
+    FinancialRollups,
+    MoneyValue,
+    MoneyValueType,
+    PeriodOfPerformance,
+    PortfolioMetrics,
+    RelatedAward,
+    SourceAttribution,
+    SourceContext,
+    SubcontractRelationship,
+    YearlyObligationRollup,
+)
